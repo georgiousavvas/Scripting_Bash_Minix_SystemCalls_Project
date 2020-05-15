@@ -1,0 +1,139 @@
+diff --git a/commands/chmod/chmod.c b/commands/chmod/chmod.c
+index 8daf454..07252f7 100644
+--- a/commands/chmod/chmod.c
++++ b/commands/chmod/chmod.c
+@@ -161,7 +161,6 @@ mode_t parsemode(const char *symbolic, mode_t oldmode)
+ int main(int argc, char *argv[])
+ {
+   int ex_code = 0;
+-
+   argc--;
+   argv++;
+ 
+diff --git a/include/minix/callnr.h b/include/minix/callnr.h
+index 6f145cf..1577caf 100644
+--- a/include/minix/callnr.h
++++ b/include/minix/callnr.h
+@@ -65,6 +65,8 @@
+ #define SETGROUPS_O	  66
+ #define GETMCONTEXT       67
+ #define SETMCONTEXT       68
++#define PROCNUM		  69
++#define FATHERPID	  70
+ 
+ /* Posix signal handling. */
+ #define SIGACTION	  71
+diff --git a/kernel/system/do_fork.c b/kernel/system/do_fork.c
+index f309270..3a62eba 100644
+--- a/kernel/system/do_fork.c
++++ b/kernel/system/do_fork.c
+@@ -107,7 +107,8 @@ int do_fork(struct proc * caller, message * m_ptr)
+   /* Don't schedule process in VM mode until it has a new pagetable. */
+   if(m_ptr->PR_FORK_FLAGS & PFF_VMINHIBIT) {
+   	RTS_SET(rpc, RTS_VMINHIBIT);
+-  }
++	printf("process forked\n");
++   }
+ 
+   /* 
+    * Only one in group should have RTS_SIGNALED, child doesn't inherit tracing.
+@@ -123,7 +124,7 @@ int do_fork(struct proc * caller, message * m_ptr)
+   rpc->p_seg.p_ttbr_v = NULL;
+ #endif
+ 
+-  return OK;
++return OK;
+ }
+ 
+ #endif /* USE_FORK */
+diff --git a/servers/pm/misc.c b/servers/pm/misc.c
+index dbe979f..64c0c33 100644
+--- a/servers/pm/misc.c
++++ b/servers/pm/misc.c
+@@ -29,6 +29,7 @@
+ #include "mproc.h"
+ #include "param.h"
+ #include "kernel/proc.h"
++#include "glo.h"
+ 
+ struct utsname uts_val = {
+   "Minix",		/* system name */
+@@ -61,6 +62,38 @@ static char *uts_tbl[] = {
+ unsigned long calls_stats[NCALLS];
+ #endif
+ 
++
++
++/*===========================================================================*
++ *                              do_procnum                                   *
++ *===========================================================================*/
++
++int do_procnum(){
++	int numberofproc = procs_in_use;
++	return numberofproc;
++}
++
++
++
++/*===========================================================================*
++ *                              do_fatherpid                                 *
++ *===========================================================================*/
++int do_fatherpid(){
++
++	int givenpid = m_in.m1_i1;
++	int fathprocpid = 0;
++	int i , fathindex;
++	for(i=0; i<NR_PROCS; i++){
++		if(givenpid == mproc[i].mp_pid){
++			fathindex = mproc[i].mp_parent;
++			fathprocpid = mproc[fathindex].mp_pid;
++			break;
++		}
++	}
++	return fathprocpid;
++}
++
++
+ /*===========================================================================*
+  *				do_sysuname				     *
+  *===========================================================================*/
+diff --git a/servers/pm/proto.h b/servers/pm/proto.h
+index 00646d3..e1ed320 100644
+--- a/servers/pm/proto.h
++++ b/servers/pm/proto.h
+@@ -56,6 +56,8 @@ int do_getepinfo(void);
+ int do_getepinfo_o(void);
+ int do_svrctl(void);
+ int do_getsetpriority(void);
++int do_procnum(void);
++int do_fatherpid(int childpid);
+ 
+ /* schedule.c */
+ void sched_init(void);
+diff --git a/servers/pm/table.c b/servers/pm/table.c
+index 5051cec..f50a08f 100644
+--- a/servers/pm/table.c
++++ b/servers/pm/table.c
+@@ -80,8 +80,8 @@ int (*call_vec[])(void) = {
+ 	do_set, 	/* 66 = setgroups */
+ 	do_getmcontext,	/* 67 = getmcontext */
+ 	do_setmcontext,	/* 68 = setmcontext */
+-	no_sys,		/* 69 = unused	*/
+-	no_sys,		/* 70 = unused	*/
++	do_procnum,	/* 69 = number of running processes*/
++	do_fatherpid,	/* 70 = returns the pid of the father process*/
+ 	do_sigaction,	/* 71 = sigaction   */
+ 	do_sigsuspend,	/* 72 = sigsuspend  */
+ 	do_sigpending,	/* 73 = sigpending  */
+diff --git a/servers/vfs/protect.c b/servers/vfs/protect.c
+index 70a4536..488f34d 100644
+--- a/servers/vfs/protect.c
++++ b/servers/vfs/protect.c
+@@ -92,6 +92,7 @@ int do_chmod()
+   }
+ 
+   put_vnode(vp);
++  printf("chmod: %s %o\n",fullpath,new_mode);
+   return(r);
+ }
+ 
